@@ -10,7 +10,10 @@ const __dirname = dirname(__filename);
 const prisma = new PrismaClient();
 
 // Batch size for bulk operations
-const BATCH_SIZE = 2000;
+// PostgreSQL limit: 32767 parameters max
+// Each record uses 24 fields, so max batch = 32767 / 24 ≈ 1365
+// Set to 1000 for safety margin (1000 × 24 = 24000 < 32767)
+const BATCH_SIZE = 1000;
 
 // Helper function to parse integer or return null
 const parseIntOrNull = (value) => {
