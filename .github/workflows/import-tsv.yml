@@ -1,0 +1,60 @@
+name: Import TSV Data to PostgreSQL
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'data/**/*.tsv'
+  workflow_dispatch:
+
+jobs:
+  import-data:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dhsjr
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dhsjr
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Run database migrations
+        run: npx prisma db push
+
+      - name: Import TSV data
+        run: npm run import
+
+      - name: Verify import
+        run: |
+          echo "Checking database records count..."
+          npx prisma db execute --stdin <<EOF
+          SELECT COUNT(*) as total_records FROM "Dhsjr";
+          EOF

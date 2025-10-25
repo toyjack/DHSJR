@@ -1,0 +1,35 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Dhsjr {
+  character_id       String @id
+  book_id            String? //資料番号
+  book_name          String? //資料名
+  index_in_book      Int? //資料内漢字番号
+  word_index_in_book Int? //資料内漢語番号
+  character          String? //単字_見出し
+  character_original String? //単字_出現形
+  word_id            String
+  word               String? //漢語_見出し
+  word_original      String? //漢語_出現形
+  word_alphabet      String? //漢語_alphabet
+  word_type          String? //語種
+  pos_in_word        Int? //漢語内位置
+  len                String? //単字長 shoud be Int, but "1、2" exists in the data
+  shoten             String? //声点
+  shoten_word        String? //声点型
+  kana               String? //仮名注
+  word_kana          String? //仮名型
+  fanqie             String? //反切
+  ruion              String? //類音
+  hakase             String? //節博士
+  etc                String? //その他
+  position_in_book   String? //出現位置
+  notes              String? //備考
+}
