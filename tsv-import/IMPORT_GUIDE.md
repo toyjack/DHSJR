@@ -2,6 +2,14 @@
 
 このプロジェクトは、dataフォルダ内のすべてのTSVファイルをPostgreSQLデータベースに自動的にインポートするGitHub Actionを提供します。
 
+## プロジェクト構成
+
+すべてのインポート関連ファイルは `tsv-import/` フォルダに配置されています：
+- `tsv-import/package.json` - Node.js依存関係
+- `tsv-import/prisma/schema.prisma` - データベーススキーマ
+- `tsv-import/scripts/import-tsv.js` - インポートスクリプト
+- `.github/workflows/import-tsv.yml` - GitHub Action設定
+
 ## 自動インポート
 
 ### GitHub Secretsの設定
@@ -28,31 +36,37 @@ GitHub Actionは以下の場合に自動的に実行されます：
 
 ### 1. 環境変数の設定
 
-`.env` ファイルを作成し、PostgreSQLの接続情報を設定します：
+`tsv-import/.env` ファイルを作成し、PostgreSQLの接続情報を設定します：
 
 ```bash
 DATABASE_URL="postgresql://username:password@localhost:5432/dhsjr"
 ```
 
-### 2. 依存関係のインストール
+### 2. tsv-importディレクトリに移動
+
+```bash
+cd tsv-import
+```
+
+### 3. 依存関係のインストール
 
 ```bash
 npm install
 ```
 
-### 3. Prisma Clientの生成
+### 4. Prisma Clientの生成
 
 ```bash
 npx prisma generate
 ```
 
-### 4. データベースのセットアップ
+### 5. データベースのセットアップ
 
 ```bash
 npx prisma db push
 ```
 
-### 5. TSVデータのインポート
+### 6. TSVデータのインポート
 
 ```bash
 npm run import

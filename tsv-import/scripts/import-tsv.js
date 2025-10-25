@@ -96,7 +96,7 @@ async function importTsvFile(filePath) {
 
 async function main() {
   try {
-    const dataDir = join(__dirname, '..', 'data');
+    const dataDir = join(__dirname, '../..', 'data');
     const files = await fs.readdir(dataDir);
     const tsvFiles = files.filter(f => f.endsWith('.tsv'));
 
