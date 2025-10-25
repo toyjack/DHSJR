@@ -4,6 +4,19 @@
 
 ## 自動インポート
 
+### GitHub Secretsの設定
+
+GitHub Actionを使用する前に、リポジトリのSecretsを設定する必要があります：
+
+1. GitHubリポジトリページで `Settings` > `Secrets and variables` > `Actions` に移動
+2. `New repository secret` をクリック
+3. 以下のシークレットを追加：
+   - **Name**: `DATABASE_URL`
+   - **Value**: `postgresql://username:password@hostname:5432/database_name`
+     - 例: `postgresql://myuser:mypassword@db.example.com:5432/dhsjr`
+
+### 実行タイミング
+
 GitHub Actionは以下の場合に自動的に実行されます：
 
 1. `data/**/*.tsv` ファイルが変更され、mainブランチにプッシュされた時
