@@ -64,18 +64,9 @@ jobs:
         env:
           SUPABASE_URL_ENV: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY_ENV: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          CI: true
         run: |
-          python -c "
-          from supabase import create_client
-          import os
-          supabase = create_client(os.environ['SUPABASE_URL_ENV'], os.environ['SUPABASE_SERVICE_KEY_ENV'])
-          try:
-              # 删除所有数据但保留表结构
-              supabase.table('dhsjr').delete().neq('id', 0).execute()
-              print('✅ テーブルをクリアしました')
-          except Exception as e:
-              print(f'⚠️  クリア警告: {str(e)}')
-          "
+          python scripts/clear_table.py
       
       - name: 🚀 データインポート (Import data)
         env:
