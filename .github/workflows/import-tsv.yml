@@ -62,13 +62,13 @@ jobs:
       - name: 🗑️ テーブルクリア (Clear table - optional)
         if: ${{ github.event.inputs.clear_table == 'true' }}
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_URL_ENV: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY_ENV: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           python -c "
           from supabase import create_client
           import os
-          supabase = create_client(os.environ['SUPABASE_URL'], os.environ['SUPABASE_SERVICE_KEY'])
+          supabase = create_client(os.environ['SUPABASE_URL_ENV'], os.environ['SUPABASE_SERVICE_KEY_ENV'])
           try:
               # 删除所有数据但保留表结构
               supabase.table('dhsjr').delete().neq('id', 0).execute()
@@ -79,21 +79,21 @@ jobs:
       
       - name: 🚀 データインポート (Import data)
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_URL_ENV: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY_ENV: ${{ secrets.SUPABASE_SERVICE_KEY }}
           BATCH_SIZE: ${{ github.event.inputs.batch_size || '1000' }}
         run: |
           python scripts/import_dhsjr.py
       
       - name: 📊 インポート結果確認 (Verify import)
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_URL_ENV: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY_ENV: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           python -c "
           from supabase import create_client
           import os
-          supabase = create_client(os.environ['SUPABASE_URL'], os.environ['SUPABASE_SERVICE_KEY'])
+          supabase = create_client(os.environ['SUPABASE_URL_ENV'], os.environ['SUPABASE_SERVICE_KEY_ENV'])
           result = supabase.table('dhsjr').select('*', count='exact').limit(1).execute()
           print(f'✅ テーブル内の総行数: {result.count:,} 行')
           "

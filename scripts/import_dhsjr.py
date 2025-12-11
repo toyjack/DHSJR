@@ -6,8 +6,8 @@ from typing import List, Dict
 import time
 
 # 配置
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
+SUPABASE_URL = os.environ.get("SUPABASE_URL_ENV")
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY_ENV")
 TABLE_NAME = "dhsjr"
 TSV_FILE = "DHSJR_data_all.tsv"
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "1000"))
