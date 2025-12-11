@@ -11,8 +11,6 @@ from supabase import create_client, Client
 # 配置
 SUPABASE_URL = os.environ.get("SUPABASE_URL_ENV")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY_ENV")
-TABLE_NAME = "dhsjr"
-
 
 def create_supabase_client() -> Client:
     """创建 Supabase 客户端"""
@@ -21,16 +19,17 @@ def create_supabase_client() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
-def clear_table(supabase: Client, table_name: str) -> None:
-    """清空表中的所有数据，但保留表结构"""
+def clear_table(supabase: Client) -> None:
+    """清空 dhsjr 表中的所有数据，但保留表结构"""
     try:
-        print(f"🗑️  テーブル '{table_name}' をクリア中...")
+        print("🗑️  テーブル dhsjr をクリア中...")
 
-        # 删除所有数据但保留表结构
-        # 使用 neq('id', 0) 来匹配所有行
-        response = supabase.table(table_name).delete().neq('id', 0).execute()
+        response = (
+            supabase.rpc("truncate_dhsjr")
+            .execute()
+        )
 
-        print(f"✅ テーブル '{table_name}' をクリアしました")
+        print("✅ テーブル dhsjr をクリアしました")
 
     except Exception as e:
         print(f"❌ クリアエラー: {str(e)}")
@@ -55,7 +54,7 @@ def main():
     print()
 
     # 确认操作
-    print(f"⚠️  警告: テーブル '{TABLE_NAME}' の全データを削除します")
+    print("⚠️  警告: テーブル dhsjr の全データを削除します")
     print("   (表構造は保持されます)")
     print()
 
@@ -71,7 +70,7 @@ def main():
 
     # 清空表
     try:
-        clear_table(supabase, TABLE_NAME)
+        clear_table(supabase)
         print()
         print("=" * 60)
         print("✨ クリア完了!")
