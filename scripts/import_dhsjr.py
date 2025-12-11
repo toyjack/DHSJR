@@ -1,3 +1,9 @@
+# /// script
+# requires-python = ">=3.14"
+# dependencies = [
+#     "supabase>=2.25.1",
+# ]
+# ///
 import os
 import csv
 import sys
@@ -69,21 +75,20 @@ def read_tsv_in_batches(file_path: str, batch_size: int):
 def process_row(row: Dict) -> Dict:
     """处理单行数据"""
     processed = {}
-    
+
     for original_key, db_key in COLUMN_MAPPING.items():
         value = row.get(original_key, '')
-        
+
         # 数据清洗
         if isinstance(value, str):
             value = value.strip()
             # 空字符串转为 None
             if value == '' or value == 'NULL':
                 value = None
-        
-        # 跳过 ID 列，让数据库自动生成
-        if db_key != 'ID':
-            processed[db_key] = value
-    
+
+        # 保留 ID 列，使用 TSV 文件中的原始 ID
+        processed[db_key] = value
+
     return processed
 
 def insert_batch(supabase: Client, table_name: str, batch: List[Dict], retry_count: int = 3):
