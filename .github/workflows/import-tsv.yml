@@ -1,48 +1,45 @@
 name: Import DHSJR Data to Supabase
 
 on:
-  # 手动触发
   workflow_dispatch:
     inputs:
       batch_size:
         description: 'バッチサイズ (Batch size)'
         required: false
         default: '1000'
-      clear_table:
-        description: 'テーブルをクリアする (Clear table before import)'
+      skip_clear:
+        description: 'テーブルクリアをスキップする (Skip table clear)'
         required: false
         type: boolean
         default: false
-  
-  # 或者在文件更新时自动触发
-  # push:
-  #   branches:
-  #     - main
-  #   paths:
-  #     - 'DHSJR_data_all.tsv'
 
 jobs:
   import-dhsjr:
     runs-on: ubuntu-latest
-    timeout-minutes: 120  # 2小时超时
-    
+    timeout-minutes: 120
+
+    env:
+      SUPABASE_URL_ENV: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY_ENV: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
     steps:
       - name: 📥 チェックアウト (Checkout)
         uses: actions/checkout@v4
         with:
-          lfs: true  # 如果使用 Git LFS
-      
+          lfs: true
+
       - name: 🐍 Python セットアップ (Setup Python)
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
-      
+          cache-dependency-path: scripts/requirements.txt
+
       - name: 📦 依存関係インストール (Install dependencies)
         run: |
           python -m pip install --upgrade pip
-          pip install -r ./scripts/requirements.txt
-      
+          pip install -r scripts/requirements.txt
+
       - name: 📊 ファイル確認 (Check file)
         run: |
           if [ ! -f "DHSJR_data_all.tsv" ]; then
@@ -50,55 +47,32 @@ jobs:
             exit 1
           fi
           echo "✅ ファイル確認完了"
-          echo "📁 ファイルサイズ:"
           ls -lh DHSJR_data_all.tsv
-          echo ""
-          echo "📝 行数:"
-          wc -l DHSJR_data_all.tsv
-          echo ""
-          echo "📋 ヘッダー確認:"
-          head -1 DHSJR_data_all.tsv
-      
-      - name: 🗑️ テーブルクリア (Clear table - optional)
-        if: ${{ github.event.inputs.clear_table == 'true' }}
-        env:
-          SUPABASE_URL_ENV: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY_ENV: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          CI: true
-        run: |
-          python scripts/clear_table.py
-      
+          echo "📝 行数: $(wc -l < DHSJR_data_all.tsv)"
+
       - name: 🚀 データインポート (Import data)
-        env:
-          SUPABASE_URL_ENV: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY_ENV: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          BATCH_SIZE: ${{ github.event.inputs.batch_size || '1000' }}
+        working-directory: ${{ github.workspace }}
         run: |
-          python scripts/import_dhsjr.py
-      
+          ARGS="--batch-size ${{ github.event.inputs.batch_size || '1000' }}"
+          if [ "${{ github.event.inputs.skip_clear }}" = "true" ]; then
+            ARGS="$ARGS --no-clear"
+          fi
+          python scripts/import_dhsjr.py $ARGS
+
       - name: 📊 インポート結果確認 (Verify import)
-        env:
-          SUPABASE_URL_ENV: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY_ENV: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           python -c "
-          from supabase import create_client
-          import os
-          supabase = create_client(os.environ['SUPABASE_URL_ENV'], os.environ['SUPABASE_SERVICE_KEY_ENV'])
+          import sys; sys.path.insert(0, 'scripts')
+          from common import create_supabase_client
+          supabase = create_supabase_client()
           result = supabase.table('dhsjr').select('*', count='exact').limit(1).execute()
           print(f'✅ テーブル内の総行数: {result.count:,} 行')
           "
-      
+
       - name: 📤 ログアップロード (Upload logs on failure)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: import-logs
-          path: |
-            *.log
+          path: '*.log'
           retention-days: 7
-
-      - name: 💬 成功通知 (Success notification)
-        if: success()
-        run: |
-          echo "🎉 DHSJR データのインポートが正常に完了しました!"
