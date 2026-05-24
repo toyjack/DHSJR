@@ -57,7 +57,7 @@ def parse_args() -> argparse.Namespace:
 def get_file_info(file_path: str) -> tuple[int, int]:
     """ファイルサイズとデータ行数を取得する"""
     file_size = os.path.getsize(file_path)
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, "r", encoding="utf-8-sig") as f:
         line_count = sum(1 for _ in f) - 1  # ヘッダーを除く
     return file_size, line_count
 
@@ -66,6 +66,7 @@ def process_row(row: Dict[str, str]) -> Dict[str, str | None]:
     """1行のデータをクリーニングする（空文字列・NULLをNoneに変換）"""
     processed = {}
     for key, value in row.items():
+        key = key.lstrip("\ufeff")
         if isinstance(value, str):
             value = value.strip()
             if value == "" or value == "NULL":
@@ -76,7 +77,7 @@ def process_row(row: Dict[str, str]) -> Dict[str, str | None]:
 
 def read_tsv_in_batches(file_path: str, batch_size: int) -> Iterator[List[Dict]]:
     """TSV ファイルをバッチごとに読み込む"""
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, "r", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f, delimiter="\t")
         batch: list[Dict] = []
 
