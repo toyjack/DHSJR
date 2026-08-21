@@ -27,6 +27,34 @@ DEFAULT_TABLE = "dhsjr"
 DEFAULT_BATCH_SIZE = 1000
 MAX_RETRIES = 3
 
+# Supabase の dhsjr テーブルに現在存在する列だけを送信する。
+# TSV に追加された未マッピング列は、DB マイグレーションが完了するまで無視する。
+IMPORT_FIELDS = frozenset({
+    "ID",
+    "資料番号",
+    "資料名",
+    "資料内漢字番号",
+    "資料内漢語番号",
+    "単字_見出し",
+    "単字_出現形",
+    "漢語_見出し",
+    "漢語_出現形",
+    "漢語_alphabet",
+    "語種",
+    "漢語内位置",
+    "単字長",
+    "声点",
+    "声点型",
+    "仮名注",
+    "仮名型",
+    "反切",
+    "類音",
+    "節博士",
+    "その他",
+    "出現位置",
+    "備考",
+})
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="DHSJR データインポートツール")
@@ -63,10 +91,14 @@ def get_file_info(file_path: str) -> tuple[int, int]:
 
 
 def process_row(row: Dict[str, str]) -> Dict[str, str | None]:
-    """1行のデータをクリーニングする（空文字列・NULLをNoneに変換）"""
+    """DB列だけを残し、空文字列・NULLをNoneに変換する。"""
     processed = {}
     for key, value in row.items():
+        if key is None:
+            continue
         key = key.lstrip("\ufeff")
+        if key not in IMPORT_FIELDS:
+            continue
         if isinstance(value, str):
             value = value.strip()
             if value == "" or value == "NULL":
@@ -80,6 +112,17 @@ def read_tsv_in_batches(file_path: str, batch_size: int) -> Iterator[List[Dict]]
     with open(file_path, "r", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f, delimiter="\t")
         batch: list[Dict] = []
+
+        ignored_fields = [
+            field for field in (reader.fieldnames or [])
+            if field.lstrip("\ufeff") not in IMPORT_FIELDS
+        ]
+        if ignored_fields:
+            print(
+                "ℹ️  DBに未マッピングのTSV列を無視します: "
+                + ", ".join(ignored_fields)
+            )
+            print()
 
         for row in reader:
             processed = process_row(row)
