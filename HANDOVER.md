@@ -103,7 +103,7 @@
 - 抽查确认变化是仓库数据相对当前 production 的真实修订，不是空值或空白字符归一化噪声。
 - production 独有记录 `30-048-02-012852` 可追溯至提交 `d9a242b` 中的明确删除。
 
-### 原子 promotion 实现（尚未安装到 Supabase）
+### 原子 promotion 实现与 Supabase 安装验证
 
 - 新增 `supabase/promote_dhsjr_staging.sql`：
   - 校验确认文字与 staging 行数
@@ -119,7 +119,12 @@
   - 用触发器制造复制中途失败后，production 完整回滚
   - 失败后此前的 backup 也保持不变
 - workflow 的 production 路径已改为：预检 → 全量差异报告 → 原子 promotion → 行数核对。
-- 这些改动已提交并推送到功能分支；数据库函数尚未在 Supabase 执行，production 也没有运行。
+- 用户已于 2026-08-21 在 Supabase SQL Editor 安装数据库函数。
+- 安装后通过两个安全失败分支验证 RPC 与护栏：
+  - 错误确认文字返回 `Production confirmation is invalid`
+  - 正确确认文字但期望行数为 1 时返回 `Staging row count 387268 does not match expected 1`
+- 两次调用都在备份与清表前中止；验证后 staging 仍为 387,268 行，production 仍为 387,265 行。
+- production promotion 尚未运行。
 
 ### GitHub Actions 运行时升级与云端验证
 
@@ -139,9 +144,9 @@
 
 ## 尚未解决的问题
 
-### 1. 原子 promotion 尚未安装和云端验证
+### 1. 原子 promotion 成功路径尚未在云端运行
 
-需要先审查 `supabase/promote_dhsjr_staging.sql`，再由用户在 Supabase SQL Editor 安装函数。安装后先重新运行云端 preflight 与 staging；不要直接运行 production。
+函数已安装，错误确认和错误行数护栏均已通过云端 RPC 验证。真正的成功路径会修改 production，只能在数据差异获得明确批准后运行。
 
 ### 2. 全量内容变化需要发布审查
 
@@ -153,7 +158,7 @@ Issue #1 继续保持开启。需要决定字段类型、可空性、索引及�
 
 ### 4. 原子 production 路径尚未云端验证
 
-v7 Actions、preflight 与 staging 路径已在云端验证。production 路径必须等数据库函数安装并完成差异审查后才能验证；当前不要运行。
+v7 Actions、preflight 与 staging 路径已在云端验证。production 路径必须等差异审查完成并获得明确批准后才能验证；当前不要运行。
 
 ### 5. Draft PR 尚未合并
 
@@ -161,10 +166,9 @@ v7 Actions、preflight 与 staging 路径已在云端验证。production 路径�
 
 ## 下次继续的建议顺序
 
-1. 由用户审查 `supabase/promote_dhsjr_staging.sql`，然后在 Supabase SQL Editor 安装；不要执行恢复 SQL。
-2. 更新 Draft PR，附上差异统计、本地回滚测试和新的 Actions run 链接。
-3. 由数据负责人确认 4 新增、1 删除、15,060 条内容变化可发布。
-4. 函数安装和审查完成后，再决定是否将 PR 标记 ready、合并及运行 production。
+1. 更新 Draft PR，补充函数安装与两个安全失败分支的验证结果。
+2. 由数据负责人确认 4 新增、1 删除、15,060 条内容变化可发布。
+3. 获得明确批准后，再决定是否将 PR 标记 ready、合并及运行 production。
 
 ## 安全约束
 
