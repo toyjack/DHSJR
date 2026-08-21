@@ -74,38 +74,77 @@
 - 两表 schema：均为 23 列，字段集合一致
 - 六条代表记录（包含四个原重复 ID）的全部 23 个导入字段与 TSV 完全一致
 
+### Staging 与 production 全量差异分析
+
+- 新增只读工具 `scripts/compare_dhsjr_tables.py`，通过 PostgREST GET 分页读取并比较全部 23 个导入字段。
+- 2026-08-21 全量比较结果：
+  - staging：387,268 行
+  - production：387,265 行
+  - staging 新增：4 行
+    - `30-048-02-030001`
+    - `30-048-02-030002`
+    - `30-048-02-030003`
+    - `30-048-02-030004`
+  - production 独有、发布时将删除：1 行
+    - `30-048-02-012852`
+  - 同 ID 内容变化：15,060 行
+- 逐字段变化数量：
+  - `単字_見出し`：5,252
+  - `単字_出現形`：137
+  - `漢語_見出し`：10,716
+  - `漢語_出現形`：112
+  - `漢語_alphabet`：2
+  - `声点型`：82
+  - `その他`：748
+  - `出現位置`：3,537
+  - `備考`：2
+  - 其余 15 个字段：0
+- 抽查确认变化是仓库数据相对当前 production 的真实修订，不是空值或空白字符归一化噪声。
+- production 独有记录 `30-048-02-012852` 可追溯至提交 `d9a242b` 中的明确删除。
+
+### 原子 promotion 实现（尚未安装到 Supabase）
+
+- 新增 `supabase/promote_dhsjr_staging.sql`：
+  - 校验确认文字与 staging 行数
+  - 锁定 staging 和 production
+  - 在同一事务中重建 `dhsjr_backup` 并复制当前 production
+  - 清空 production 后从 staging 复制明确列出的 23 个字段
+  - 在提交前再次核对写入行数
+  - 任一步失败时由 PostgreSQL 整体回滚
+- 新增 `scripts/promote_dhsjr.py`，只调用上述数据库函数，不再通过 REST 分批写 production。
+- 新增 `supabase/restore_dhsjr_backup.sql`，供人工审查后的紧急恢复使用。
+- 新增 `supabase/test_promote_dhsjr_staging.sql`，已在一次性本地 PostgreSQL 18 实例验证：
+  - 正常 promotion 成功
+  - 用触发器制造复制中途失败后，production 完整回滚
+  - 失败后此前的 backup 也保持不变
+- workflow 的 production 路径已改为：预检 → 全量差异报告 → 原子 promotion → 行数核对。
+- 这些改动当前只在本地工作区，数据库函数尚未在 Supabase 执行，production 也没有运行。
+
+### GitHub Actions 运行时升级（尚未云端验证）
+
+- 根据 2026-08-21 GitHub 官方 latest release 信息升级为：
+  - `actions/checkout@v7`
+  - `actions/setup-python@v7`
+  - `actions/upload-artifact@v7`
+- workflow 增加最小 `contents: read` 权限，并在失败时上传差异报告（如存在）。
+
 ## 尚未解决的问题
 
-### 1. 正式发布不是原子操作
+### 1. 原子 promotion 尚未安装和云端验证
 
-当前 production 模式仍会先清空正式表，再通过 REST 分 388 批写入。中途失败可能留下空表或部分数据，因此尚不能安全运行 production。
+需要先审查 `supabase/promote_dhsjr_staging.sql`，再由用户在 Supabase SQL Editor 安装函数。安装后先重新运行云端 preflight 与 staging；不要直接运行 production。
 
-推荐改为数据库内的单事务发布：
+### 2. 全量内容变化需要发布审查
 
-1. 对 staging 做完整验证。
-2. 创建正式表备份或可恢复快照。
-3. 在 PostgreSQL 单一事务内锁定 `dhsjr`。
-4. 清空并从 `dhsjr_staging` 复制 23 个字段。
-5. 在事务内验证行数；失败则整体回滚。
-
-### 2. 尚未完成 staging 与 production 的全量差异分析
-
-下一步优先执行只读比较：
-
-- staging 新增 ID
-- production 独有、将被删除的 ID
-- 同一 ID 下内容发生变化的记录
-- 每个字段的变化数量
-
-不要仅根据 `387,268 - 387,265 = 3` 推断只有三条新增记录。
+已确定有 15,060 条同 ID 内容变化、4 条新增和 1 条删除。虽然抽查与 Git 历史支持这些是实际数据修订，但在 production promotion 前仍应由数据负责人确认本次差异范围可接受。
 
 ### 3. 新增字段仍未进入数据库
 
 Issue #1 继续保持开启。需要决定字段类型、可空性、索引及迁移方案后，再更新导入 allowlist。
 
-### 4. GitHub Actions 版本警告
+### 4. GitHub Actions 升级尚未云端验证
 
-运行时出现 Node.js 20 弃用警告，涉及 `actions/checkout@v4`、`actions/setup-python@v5`，失败日志路径还涉及 `actions/upload-artifact@v4`。升级前应核对各 Action 当前稳定版本。
+版本已升级到 v7，但还没有提交或运行 GitHub Actions。需要通过新的 preflight 与 staging run 确认 GitHub-hosted runner、LFS 与 artifact 行为正常。
 
 ### 5. Draft PR 尚未合并
 
@@ -113,13 +152,13 @@ Issue #1 继续保持开启。需要决定字段类型、可空性、索引及�
 
 ## 下次继续的建议顺序
 
-1. 切换到 `fix/ignore-new-tsv-fields` 并确认工作区干净。
-2. 只读比较 `dhsjr_staging` 与 `dhsjr` 的全部 23 个字段。
-3. 设计原子 promotion SQL 和备份/恢复步骤。
-4. 在测试表上验证成功路径和故意失败后的回滚。
-5. 修改 workflow，使 production 只调用已验证的原子 promotion。
-6. 升级 GitHub Actions 版本并重新运行 preflight、staging。
-7. 更新 Draft PR 与 Issue #1；审查完成后再决定是否合并。
+1. 审查并提交当前本地改动，推送到 `fix/ignore-new-tsv-fields`。
+2. 由用户在 Supabase SQL Editor 执行 `supabase/promote_dhsjr_staging.sql`；不要执行恢复 SQL。
+3. 重新运行云端 preflight。
+4. 重新运行完整 staging，并复跑全量差异报告。
+5. 更新 Draft PR，附上差异统计、本地回滚测试和新的 Actions run 链接。
+6. 由数据负责人确认 4 新增、1 删除、15,060 条内容变化可发布。
+7. 审查完成后再决定是否将 PR 标记 ready、合并及运行 production。
 
 ## 安全约束
 
