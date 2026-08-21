@@ -54,6 +54,7 @@ IMPORT_FIELDS = frozenset({
     "出現位置",
     "備考",
 })
+REQUIRED_FIELDS = frozenset({"ID", "資料内漢字番号"})
 
 
 def parse_args() -> argparse.Namespace:
@@ -78,6 +79,11 @@ def parse_args() -> argparse.Namespace:
         "--no-clear",
         action="store_true",
         help="インポート前のテーブルクリアをスキップする",
+    )
+    parser.add_argument(
+        "--preflight-only",
+        action="store_true",
+        help="TSVの事前検証だけを実行し、DBへ接続せず終了する",
     )
     return parser.parse_args()
 
@@ -105,6 +111,85 @@ def process_row(row: Dict[str, str]) -> Dict[str, str | None]:
                 value = None
         processed[key] = value
     return processed
+
+
+def preflight_validate_tsv(file_path: str) -> int:
+    """DB接続前にTSVの構造・必須値・主キー重複を検証する。"""
+    seen_ids: dict[str, int] = {}
+    duplicate_ids: list[tuple[str, int, int]] = []
+    malformed_lines: list[int] = []
+    missing_required_values: list[tuple[int, str]] = []
+    invalid_integer_values: list[tuple[int, str]] = []
+    row_count = 0
+
+    with open(file_path, "r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f, delimiter="\t")
+        fieldnames = {
+            field.lstrip("\ufeff") for field in (reader.fieldnames or [])
+        }
+        missing_headers = sorted(REQUIRED_FIELDS - fieldnames)
+        if missing_headers:
+            raise ValueError(
+                "必須TSV列がありません: " + ", ".join(missing_headers)
+            )
+
+        for line_number, row in enumerate(reader, start=2):
+            row_count += 1
+            if None in row or any(value is None for value in row.values()):
+                malformed_lines.append(line_number)
+                continue
+
+            processed = process_row(row)
+            for field in REQUIRED_FIELDS:
+                if processed.get(field) is None:
+                    missing_required_values.append((line_number, field))
+
+            row_id = processed.get("ID")
+            if row_id is not None:
+                first_line = seen_ids.setdefault(row_id, line_number)
+                if first_line != line_number:
+                    duplicate_ids.append((row_id, first_line, line_number))
+
+            character_number = processed.get("資料内漢字番号")
+            if character_number is not None:
+                try:
+                    int(character_number)
+                except (TypeError, ValueError):
+                    invalid_integer_values.append(
+                        (line_number, str(character_number))
+                    )
+
+    errors = []
+    if row_count == 0:
+        errors.append("TSVにデータ行がありません")
+    if malformed_lines:
+        errors.append(
+            "列数が不正な行: "
+            + ", ".join(map(str, malformed_lines[:10]))
+        )
+    if missing_required_values:
+        examples = ", ".join(
+            f"{line}:{field}"
+            for line, field in missing_required_values[:10]
+        )
+        errors.append("必須値が空の行: " + examples)
+    if invalid_integer_values:
+        examples = ", ".join(
+            f"{line}:{value}"
+            for line, value in invalid_integer_values[:10]
+        )
+        errors.append("資料内漢字番号が整数でない行: " + examples)
+    if duplicate_ids:
+        examples = ", ".join(
+            f"{row_id} ({first_line}, {duplicate_line})"
+            for row_id, first_line, duplicate_line in duplicate_ids[:10]
+        )
+        errors.append("重複ID: " + examples)
+
+    if errors:
+        raise ValueError("\n".join(errors))
+
+    return row_count
 
 
 def read_tsv_in_batches(file_path: str, batch_size: int) -> Iterator[List[Dict]]:
@@ -184,6 +269,20 @@ def main() -> None:
     print(f"🎯 ターゲットテーブル: {args.table}")
     print(f"📦 バッチサイズ: {args.batch_size} 行/バッチ")
     print()
+
+    # DBへ接続する前に、失敗要因を検出する
+    print("🔎 TSV事前検証中...")
+    try:
+        validated_rows = preflight_validate_tsv(args.file)
+    except ValueError as e:
+        print(f"❌ TSV事前検証失敗:\n{e}")
+        sys.exit(1)
+    print(f"✅ TSV事前検証成功: {validated_rows:,} 行")
+    print()
+
+    if args.preflight_only:
+        print("✅ 事前検証のみ完了しました。DBには接続していません")
+        return
 
     # Supabase 接続
     print("🔌 Supabase に接続中...")
