@@ -125,6 +125,10 @@
   - 正确确认文字但期望行数为 1 时返回 `Staging row count 387268 does not match expected 1`
 - 两次调用都在备份与清表前中止；验证后 staging 仍为 387,268 行，production 仍为 387,265 行。
 - production promotion 尚未运行。
+- 首次获批的 production workflow 在全量比较后调用原子函数，但约 8 秒时触发 PostgREST `statement_timeout`：
+  - https://github.com/toyjack/DHSJR/actions/runs/32455104364
+- 失败事务已完整回滚：staging 仍为 387,268 行、production 仍为 387,265 行，且未留下 `dhsjr_backup`。
+- 根据 Supabase 的函数级超时机制，promotion 函数已改为专用 60 秒上限；backup 改为不复制无需用于恢复的索引，以降低事务耗时。该修订尚需重新安装后再重试。
 
 ### GitHub Actions 运行时升级与云端验证
 

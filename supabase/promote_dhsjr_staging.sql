@@ -12,6 +12,7 @@ returns jsonb
 language plpgsql
 security definer
 set search_path = pg_catalog, public
+set statement_timeout = '60s'
 as $$
 declare
   staging_count bigint;
@@ -43,9 +44,11 @@ begin
 
   -- Keep the immediately previous production contents for manual recovery.
   -- Transactional DDL means an older backup remains intact if this call fails.
+  -- The recovery snapshot intentionally has no indexes: rebuilding production
+  -- indexes for the backup would consume most of the API transaction timeout.
   drop table if exists public.dhsjr_backup;
   create table public.dhsjr_backup
-    (like public.dhsjr including all);
+    (like public.dhsjr including defaults including generated including identity);
   alter table public.dhsjr_backup enable row level security;
   revoke all on table public.dhsjr_backup from anon, authenticated;
 
