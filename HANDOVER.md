@@ -17,6 +17,7 @@
 3. `c9a5568` — Validate TSV before database import
 4. `c6c0b62` — Add safe staging import workflow
 5. `4cae536` — Add atomic staging promotion workflow
+6. `09d52f9` — Raise atomic promotion timeout
 
 ## 已完成工作
 
@@ -128,7 +129,16 @@
 - 首次获批的 production workflow 在全量比较后调用原子函数，但约 8 秒时触发 PostgREST `statement_timeout`：
   - https://github.com/toyjack/DHSJR/actions/runs/32455104364
 - 失败事务已完整回滚：staging 仍为 387,268 行、production 仍为 387,265 行，且未留下 `dhsjr_backup`。
-- 根据 Supabase 的函数级超时机制，promotion 函数已改为专用 60 秒上限；backup 改为不复制无需用于恢复的索引，以降低事务耗时。该修订尚需重新安装后再重试。
+- 根据 Supabase 的函数级超时机制，promotion 函数改为专用 60 秒上限；backup 改为不复制无需用于恢复的索引，以降低事务耗时。
+- 用户重新安装修订后的函数后，production promotion 成功：
+  - https://github.com/toyjack/DHSJR/actions/runs/32456930142
+- 原子函数返回：
+  - staging：387,268 行
+  - production 发布前：387,265 行
+  - backup：387,265 行
+  - production 发布后：387,268 行
+- workflow 发布后行数核对成功。
+- 独立重新读取两表全部 23 个字段后，staging 与 production 的 ID 新增、删除、内容变化及每字段变化数量全部为 0。
 
 ### GitHub Actions 运行时升级与云端验证
 
@@ -146,38 +156,38 @@
 - 重新导入后再次完成全量只读比较，4 新增、1 删除、15,060 条内容变化及逐字段统计均未漂移。
 - workflow 默认批次已相应调整为 500。
 
-## 尚未解决的问题
+## 当前状态与尚未解决的问题
 
-### 1. 原子 promotion 成功路径尚未在云端运行
+### 1. 原子 production 已完成
 
-函数已安装，错误确认和错误行数护栏均已通过云端 RPC 验证。真正的成功路径会修改 production，只能在数据差异获得明确批准后运行。
+函数护栏、失败回滚与成功路径均已完成云端验证。发布前数据保存在 `dhsjr_backup`，不要在未审查的情况下执行恢复脚本或再次运行 production。
 
-### 2. 全量内容变化需要发布审查
+### 2. 全量内容变化已获批准并发布
 
-已确定有 15,060 条同 ID 内容变化、4 条新增和 1 条删除。虽然抽查与 Git 历史支持这些是实际数据修订，但在 production promotion 前仍应由数据负责人确认本次差异范围可接受。
+数据负责人已批准 15,060 条同 ID 内容变化、4 条新增和 1 条删除。发布后 production 与 staging 全量一致。
 
 ### 3. 新增字段仍未进入数据库
 
 Issue #1 继续保持开启。需要决定字段类型、可空性、索引及迁移方案后，再更新导入 allowlist。
 
-### 4. 原子 production 路径尚未云端验证
+### 4. 功能分支尚未合并
 
-v7 Actions、preflight 与 staging 路径已在云端验证。production 路径必须等差异审查完成并获得明确批准后才能验证；当前不要运行。
+云端 preflight、staging 与 production 均已验证，但 `main` 仍是旧 workflow。需要完成 PR 审查后决定是否标记 ready 并合并。
 
 ### 5. Draft PR 尚未合并
 
-功能分支和远端同步，但 `main` 仍使用旧 workflow。完成差异分析和原子发布设计前，不要将 PR 标记为 ready 或运行 production。
+功能分支和远端同步，但 `main` 仍使用旧 workflow。PR 保持 Draft，等待是否标记 ready 和合并的明确决定。
 
 ## 下次继续的建议顺序
 
-1. 更新 Draft PR，补充函数安装与两个安全失败分支的验证结果。
-2. 由数据负责人确认 4 新增、1 删除、15,060 条内容变化可发布。
-3. 获得明确批准后，再决定是否将 PR 标记 ready、合并及运行 production。
+1. 更新 Draft PR，补充失败回滚、超时修复、成功 promotion 与发布后零差异验证。
+2. 审查 `dhsjr_backup` 保留策略；在确认不再需要恢复前不要删除。
+3. 决定是否将 PR 标记 ready 并合并，使 `main` 获得安全 workflow。
 
 ## 安全约束
 
 - 不要提交 `.env`。
 - 不要在聊天、日志、PR 或 Issue 中输出 Supabase secret 值。
-- 不要运行当前 production 模式。
+- 不要无必要地再次运行 production 模式。
 - 不要直接清空正式 `dhsjr` 表。
-- staging 可重新导入；正式表在明确批准前保持只读。
+- staging 可重新导入；正式表的后续变更需要再次获得明确批准。
