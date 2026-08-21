@@ -6,12 +6,23 @@ on:
       batch_size:
         description: 'バッチサイズ (Batch size)'
         required: false
-        default: '1000'
-      skip_clear:
-        description: 'テーブルクリアをスキップする (Skip table clear)'
+        default: '500'
+      operation:
+        description: '実行モード (Operation mode)'
+        required: true
+        type: choice
+        options:
+          - preflight
+          - staging
+          - production
+        default: preflight
+      production_confirmation:
+        description: '本番実行時のみ IMPORT_PRODUCTION と入力'
         required: false
-        type: boolean
-        default: false
+        default: ''
+
+permissions:
+  contents: read
 
 jobs:
   import-dhsjr:
@@ -21,15 +32,18 @@ jobs:
     env:
       SUPABASE_URL_ENV: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY_ENV: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      IMPORT_OPERATION: ${{ inputs.operation }}
+      INPUT_BATCH_SIZE: ${{ inputs.batch_size }}
+      PRODUCTION_CONFIRMATION: ${{ inputs.production_confirmation }}
 
     steps:
       - name: 📥 チェックアウト (Checkout)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           lfs: true
 
       - name: 🐍 Python セットアップ (Setup Python)
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -50,29 +64,80 @@ jobs:
           ls -lh DHSJR_data_all.tsv
           echo "📝 行数: $(wc -l < DHSJR_data_all.tsv)"
 
+      - name: 🔎 TSV事前検証 (Preflight validation)
+        run: |
+          python scripts/import_dhsjr.py \
+            --batch-size "$INPUT_BATCH_SIZE" \
+            --preflight-only
+
+      - name: 🎯 インポート先選択 (Select target)
+        if: ${{ inputs.operation == 'staging' }}
+        run: |
+          echo "TARGET_TABLE=dhsjr_staging" >> "$GITHUB_ENV"
+
       - name: 🚀 データインポート (Import data)
+        if: ${{ inputs.operation == 'staging' }}
         working-directory: ${{ github.workspace }}
         run: |
-          ARGS="--batch-size ${{ github.event.inputs.batch_size || '1000' }}"
-          if [ "${{ github.event.inputs.skip_clear }}" = "true" ]; then
-            ARGS="$ARGS --no-clear"
-          fi
-          python scripts/import_dhsjr.py $ARGS
+          python scripts/import_dhsjr.py \
+            --batch-size "$INPUT_BATCH_SIZE" \
+            --table "$TARGET_TABLE"
 
       - name: 📊 インポート結果確認 (Verify import)
+        if: ${{ inputs.operation == 'staging' }}
+        run: |
+          python -c "
+          import os, sys; sys.path.insert(0, 'scripts')
+          from common import create_supabase_client
+          from import_dhsjr import get_file_info
+          supabase = create_supabase_client()
+          table_name = os.environ['TARGET_TABLE']
+          _, expected_count = get_file_info('DHSJR_data_all.tsv')
+          result = supabase.table(table_name).select('ID', count='exact').limit(1).execute()
+          print(f'📊 {table_name}: {result.count:,} 行 (期待値: {expected_count:,} 行)')
+          if result.count != expected_count:
+              raise SystemExit('❌ インポート後の行数が期待値と一致しません')
+          print('✅ インポート後の行数を確認しました')
+          "
+
+      - name: 🔍 本番との差分確認 (Compare staging with production)
+        if: ${{ inputs.operation == 'production' }}
+        run: |
+          if [ "$PRODUCTION_CONFIRMATION" != "IMPORT_PRODUCTION" ]; then
+            echo "❌ production 実行には IMPORT_PRODUCTION の確認入力が必要です"
+            exit 1
+          fi
+          python scripts/compare_dhsjr_tables.py --output table-diff.json
+
+      - name: 🔒 アトミック本番反映 (Atomic production promotion)
+        if: ${{ inputs.operation == 'production' }}
+        run: |
+          python scripts/promote_dhsjr.py \
+            --confirm "$PRODUCTION_CONFIRMATION"
+
+      - name: 📊 本番反映結果確認 (Verify production promotion)
+        if: ${{ inputs.operation == 'production' }}
         run: |
           python -c "
           import sys; sys.path.insert(0, 'scripts')
           from common import create_supabase_client
+          from import_dhsjr import get_file_info
           supabase = create_supabase_client()
-          result = supabase.table('dhsjr').select('*', count='exact').limit(1).execute()
-          print(f'✅ テーブル内の総行数: {result.count:,} 行')
+          _, expected_count = get_file_info('DHSJR_data_all.tsv')
+          result = supabase.table('dhsjr').select('ID', count='exact').limit(0).execute()
+          print(f'📊 dhsjr: {result.count:,} 行 (期待値: {expected_count:,} 行)')
+          if result.count != expected_count:
+              raise SystemExit('❌ 本番反映後の行数が期待値と一致しません')
+          print('✅ 本番反映後の行数を確認しました')
           "
 
       - name: 📤 ログアップロード (Upload logs on failure)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: import-logs
-          path: '*.log'
+          path: |
+            '*.log'
+            table-diff.json
+          if-no-files-found: ignore
           retention-days: 7
