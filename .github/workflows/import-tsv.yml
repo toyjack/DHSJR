@@ -6,7 +6,7 @@ on:
       batch_size:
         description: 'バッチサイズ (Batch size)'
         required: false
-        default: '1000'
+        default: '500'
       operation:
         description: '実行モード (Operation mode)'
         required: true

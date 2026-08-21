@@ -16,6 +16,7 @@
 2. `095c1d1` — Remove duplicate RMK records
 3. `c9a5568` — Validate TSV before database import
 4. `c6c0b62` — Add safe staging import workflow
+5. `4cae536` — Add atomic staging promotion workflow
 
 ## 已完成工作
 
@@ -118,15 +119,23 @@
   - 用触发器制造复制中途失败后，production 完整回滚
   - 失败后此前的 backup 也保持不变
 - workflow 的 production 路径已改为：预检 → 全量差异报告 → 原子 promotion → 行数核对。
-- 这些改动当前只在本地工作区，数据库函数尚未在 Supabase 执行，production 也没有运行。
+- 这些改动已提交并推送到功能分支；数据库函数尚未在 Supabase 执行，production 也没有运行。
 
-### GitHub Actions 运行时升级（尚未云端验证）
+### GitHub Actions 运行时升级与云端验证
 
 - 根据 2026-08-21 GitHub 官方 latest release 信息升级为：
   - `actions/checkout@v7`
   - `actions/setup-python@v7`
   - `actions/upload-artifact@v7`
 - workflow 增加最小 `contents: read` 权限，并在失败时上传差异报告（如存在）。
+- 最新云端 preflight 已成功，未再出现 Node.js 运行时弃用警告：
+  - https://github.com/toyjack/DHSJR/actions/runs/32449263932
+- staging 使用 1,000 行批次时，清表后首批连续三次触发 statement timeout；production 未变化：
+  - https://github.com/toyjack/DHSJR/actions/runs/32449329017
+- 将批次降到 500 后 staging 完整成功（4 分 46 秒），行数核对为 387,268：
+  - https://github.com/toyjack/DHSJR/actions/runs/32449489475
+- 重新导入后再次完成全量只读比较，4 新增、1 删除、15,060 条内容变化及逐字段统计均未漂移。
+- workflow 默认批次已相应调整为 500。
 
 ## 尚未解决的问题
 
@@ -142,9 +151,9 @@
 
 Issue #1 继续保持开启。需要决定字段类型、可空性、索引及迁移方案后，再更新导入 allowlist。
 
-### 4. GitHub Actions 升级尚未云端验证
+### 4. 原子 production 路径尚未云端验证
 
-版本已升级到 v7，但还没有提交或运行 GitHub Actions。需要通过新的 preflight 与 staging run 确认 GitHub-hosted runner、LFS 与 artifact 行为正常。
+v7 Actions、preflight 与 staging 路径已在云端验证。production 路径必须等数据库函数安装并完成差异审查后才能验证；当前不要运行。
 
 ### 5. Draft PR 尚未合并
 
@@ -152,13 +161,10 @@ Issue #1 继续保持开启。需要决定字段类型、可空性、索引及�
 
 ## 下次继续的建议顺序
 
-1. 审查并提交当前本地改动，推送到 `fix/ignore-new-tsv-fields`。
-2. 由用户在 Supabase SQL Editor 执行 `supabase/promote_dhsjr_staging.sql`；不要执行恢复 SQL。
-3. 重新运行云端 preflight。
-4. 重新运行完整 staging，并复跑全量差异报告。
-5. 更新 Draft PR，附上差异统计、本地回滚测试和新的 Actions run 链接。
-6. 由数据负责人确认 4 新增、1 删除、15,060 条内容变化可发布。
-7. 审查完成后再决定是否将 PR 标记 ready、合并及运行 production。
+1. 由用户审查 `supabase/promote_dhsjr_staging.sql`，然后在 Supabase SQL Editor 安装；不要执行恢复 SQL。
+2. 更新 Draft PR，附上差异统计、本地回滚测试和新的 Actions run 链接。
+3. 由数据负责人确认 4 新增、1 删除、15,060 条内容变化可发布。
+4. 函数安装和审查完成后，再决定是否将 PR 标记 ready、合并及运行 production。
 
 ## 安全约束
 
