@@ -57,6 +57,14 @@ IMPORT_FIELDS = frozenset({
 REQUIRED_FIELDS = frozenset({"ID", "資料内漢字番号"})
 
 
+def positive_int(value: str) -> int:
+    """argparse用の正整数バリデータ。"""
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("1以上の整数を指定してください")
+    return parsed
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="DHSJR データインポートツール")
     parser.add_argument(
@@ -71,7 +79,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "-b", "--batch-size",
-        type=int,
+        type=positive_int,
         default=int(os.environ.get("BATCH_SIZE", str(DEFAULT_BATCH_SIZE))),
         help=f"バッチサイズ (デフォルト: {DEFAULT_BATCH_SIZE})",
     )
@@ -238,13 +246,14 @@ def insert_batch(supabase: Client, table_name: str, batch: List[Dict]) -> None:
 
 
 def clear_table(supabase: Client, table_name: str) -> None:
-    """テーブルの全行を削除する（テーブルが存在しない場合はスキップ）"""
+    """対象テーブルへのアクセスを確認してから全行を削除する。"""
     print(f"🗑️  テーブル {table_name} をクリア中...")
     try:
         supabase.table(table_name).select("ID", count="exact").limit(0).execute()
-    except Exception:
-        print(f"⏭️  テーブル {table_name} が存在しません。クリアをスキップします")
-        return
+    except Exception as e:
+        raise RuntimeError(
+            f"テーブル {table_name} を確認できないため、インポートを中止します"
+        ) from e
     supabase.table(table_name).delete().gte("ID", "").execute()
     print(f"✅ テーブル {table_name} をクリアしました")
 
